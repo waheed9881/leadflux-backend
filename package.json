@@ -6,16 +6,16 @@
   "scripts": {
     "dev": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload",
-    "dev:frontend": "cd frontend && npm run dev",
+    "dev:frontend": "cd ..\\scrapper-frontend && npm run dev",
     "start": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run start:backend\" \"npm run start:frontend\"",
     "start:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002",
-    "start:frontend": "cd frontend && npm run start",
+    "start:frontend": "cd ..\\scrapper-frontend && npm run start",
     "build": "npm run build:frontend",
-    "build:frontend": "cd frontend && npm run build",
-    "install:all": "npm install && cd frontend && npm install",
+    "build:frontend": "cd ..\\scrapper-frontend && npm run build",
+    "install:all": "npm install && cd ..\\scrapper-frontend && npm install",
     "install:backend": "pip install -r requirements.txt",
-    "install:frontend": "cd frontend && npm install",
-    "lint": "cd frontend && npm run lint",
+    "install:frontend": "cd ..\\scrapper-frontend && npm install",
+    "lint": "cd ..\\scrapper-frontend && npm run lint",
     "setup": "npm run install:all && npm run install:backend"
   },
   "devDependencies": {

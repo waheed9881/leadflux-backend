@@ -148,6 +148,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "mapsSetCapturing") {
       const capturing = !!request.capturing;
       await setMapsState({ capturing });
+      try {
+        await chrome.action.setBadgeText({ text: capturing ? "ON" : "" });
+        if (capturing) {
+          await chrome.action.setBadgeBackgroundColor({ color: "#06b6d4" });
+        }
+      } catch {
+        // ignore badge failures (non-fatal)
+      }
       sendResponse({ ok: true, capturing });
       return;
     }

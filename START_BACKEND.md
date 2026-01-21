@@ -14,30 +14,29 @@ cd python-scrapper
 python main.py
 ```
 
-The server will start on: **http://localhost:8000**
+The server will start on: **http://localhost:8002**
 
 ### Option 2: Using Uvicorn directly
 ```bash
 cd python-scrapper
-uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload
 ```
 
 ### Option 3: Using the PORT environment variable
 ```bash
 cd python-scrapper
-set PORT=8002
+$env:PORT=8002  # PowerShell
 python main.py
 ```
 
 ## Verify Backend is Running
 
-1. Open browser: http://localhost:8000/docs
+1. Open browser: http://localhost:8002/docs
 2. You should see the FastAPI Swagger documentation
-3. Or test: http://localhost:8000/health
+3. Or test: http://localhost:8002/health
 
 ## Default Ports
-- **Port 8000**: Default backend port
-- **Port 8002**: Alternative port (if set in environment)
+- **Port 8002**: Default backend port
 
 ## Stop the Server
 Press `Ctrl + C` in the terminal

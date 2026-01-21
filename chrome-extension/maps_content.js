@@ -532,9 +532,62 @@ async function clickNextUnprocessedResult() {
   }
 }
 
+function showLeadFluxToast(message, tone = "info", timeoutMs = 3000) {
+  try {
+    const id = "leadflux-maps-toast";
+    const existing = document.getElementById(id);
+    if (existing) existing.remove();
+
+    const div = document.createElement("div");
+    div.id = id;
+    div.textContent = message;
+
+    const colors = {
+      info: { bg: "rgba(6, 182, 212, 0.18)", border: "rgba(6, 182, 212, 0.55)" },
+      success: { bg: "rgba(16, 185, 129, 0.18)", border: "rgba(16, 185, 129, 0.55)" },
+      error: { bg: "rgba(239, 68, 68, 0.18)", border: "rgba(239, 68, 68, 0.55)" },
+    };
+    const c = colors[tone] || colors.info;
+
+    Object.assign(div.style, {
+      position: "fixed",
+      right: "14px",
+      top: "14px",
+      zIndex: "2147483647",
+      padding: "10px 12px",
+      borderRadius: "10px",
+      background: c.bg,
+      border: `1px solid ${c.border}`,
+      color: "#e2e8f0",
+      fontSize: "12px",
+      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+      lineHeight: "1.35",
+      maxWidth: "280px",
+      boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+      backdropFilter: "blur(8px)",
+      pointerEvents: "none",
+    });
+
+    document.documentElement.appendChild(div);
+    window.setTimeout(() => {
+      try {
+        div.remove();
+      } catch {
+        // ignore
+      }
+    }, Math.max(1000, timeoutMs || 3000));
+  } catch {
+    // ignore
+  }
+}
+
 function startCapture() {
-  if (STATE.capturing) return;
+  if (STATE.capturing) {
+    showLeadFluxToast("LeadFlux: capture already running.", "info", 2000);
+    return;
+  }
   STATE.capturing = true;
+  showLeadFluxToast("LeadFlux: capture started. Scroll results to collect.", "success", 3500);
 
   const feed = findFeedContainer();
   if (feed) {
@@ -579,6 +632,7 @@ function stopCapture() {
     clearInterval(STATE.detailTimer);
     STATE.detailTimer = null;
   }
+  showLeadFluxToast("LeadFlux: capture stopped.", "info", 2500);
 }
 
 function debugPanelSnapshot() {
@@ -625,6 +679,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!STATE.detailTimer) {
       const throttleMs = typeof msg.throttleMs === "number" ? msg.throttleMs : 2500;
       STATE.detailTimer = setInterval(clickNextUnprocessedResult, Math.max(1000, throttleMs));
+      showLeadFluxToast("LeadFlux: fetching details… keep this tab open.", "success", 3500);
     }
     sendResponse({ ok: true });
   }
@@ -632,6 +687,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (STATE.detailTimer) {
       clearInterval(STATE.detailTimer);
       STATE.detailTimer = null;
+      showLeadFluxToast("LeadFlux: stopped fetching details.", "info", 2500);
     }
     sendResponse({ ok: true });
   }

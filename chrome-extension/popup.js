@@ -1,4 +1,4 @@
-// Popup script for LeadFlux extension
+// Popup script for LinkedIn Scrape Data extension
 
 document.addEventListener('DOMContentLoaded', async () => {
   const statusDiv = document.getElementById('status');
@@ -25,6 +25,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mapsClearBtn = document.getElementById('mapsClearBtn');
   const mapsCount = document.getElementById('mapsCount');
   const mapsLastError = document.getElementById('mapsLastError');
+  const mapsToast = document.getElementById('mapsToast');
+  const subtitle = document.getElementById('subtitle');
+
+  function showMapsToast(message, tone = "info", timeoutMs = 2500) {
+    if (!mapsToast) return;
+    mapsToast.textContent = message || "";
+    mapsToast.className = `toast ${tone}`;
+    mapsToast.style.display = message ? "block" : "none";
+    if (message && timeoutMs > 0) {
+      window.clearTimeout(showMapsToast._t);
+      showMapsToast._t = window.setTimeout(() => {
+        mapsToast.style.display = "none";
+      }, timeoutMs);
+    }
+  }
 
   // Load saved settings
   const result = await chrome.storage.sync.get(['apiUrl', 'frontendUrl', 'showInlineButton']);
@@ -47,12 +62,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (isLinkedIn) {
     statusDiv.textContent = 'Active on LinkedIn';
     statusDiv.className = 'status active';
+    if (subtitle) subtitle.textContent = "LinkedIn";
   } else if (isGoogleMaps) {
     statusDiv.textContent = 'Active on Google Maps';
     statusDiv.className = 'status active';
+    if (subtitle) subtitle.textContent = "Map";
   } else {
     statusDiv.textContent = 'Open LinkedIn or Google Maps to use';
     statusDiv.className = 'status inactive';
+    if (subtitle) subtitle.textContent = "LinkedIn / Map";
   }
 
   // Google Maps capture UI
@@ -62,6 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const resp = await chrome.runtime.sendMessage({ type: "mapsGet" });
       if (resp && resp.ok) {
         const count = Array.isArray(resp.items) ? resp.items.length : 0;
+        const capturing = !!resp.state?.capturing;
         mapsCount.textContent = `Collected: ${count}`;
         mapsCount.className = `status ${count > 0 ? "active" : "inactive"}`;
         mapsLastError.textContent = resp.lastError ? `Last error: ${resp.lastError}` : "";
@@ -69,6 +88,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           mapsLastError.textContent = mapsLastError.textContent
             ? `${mapsLastError.textContent} (panel debug saved)`
             : "Panel debug saved (use Debug Panel button)";
+        }
+
+        if (mapsStartBtn) {
+          mapsStartBtn.disabled = capturing;
+          mapsStartBtn.textContent = capturing ? "Running…" : "Start";
+        }
+        if (mapsStopBtn) {
+          mapsStopBtn.disabled = !capturing;
         }
       }
     } catch {
@@ -99,29 +126,67 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     mapsStartBtn.addEventListener("click", async () => {
       if (!tab.id) return;
-      await chrome.runtime.sendMessage({ type: "mapsSetCapturing", capturing: true });
-      await chrome.tabs.sendMessage(tab.id, { type: "mapsStart" });
-      await refreshMapsStatus();
+      mapsStartBtn.disabled = true;
+      mapsStartBtn.textContent = "Starting…";
+      showMapsToast('Capture starting. Now scroll the results list to collect.', "info", 3000);
+      try {
+        await chrome.runtime.sendMessage({ type: "mapsSetCapturing", capturing: true });
+        await chrome.tabs.sendMessage(tab.id, { type: "mapsStart" });
+        showMapsToast('Capture started. Scroll to load more results.', "success", 3000);
+      } catch (e) {
+        await chrome.runtime.sendMessage({ type: "mapsSetCapturing", capturing: false }).catch(() => null);
+        showMapsToast(
+          "Could not start capture. Open https://www.google.com/maps (search results list) and refresh the tab.",
+          "error",
+          4500
+        );
+      } finally {
+        await refreshMapsStatus();
+      }
     });
 
     mapsStopBtn.addEventListener("click", async () => {
       if (!tab.id) return;
-      await chrome.runtime.sendMessage({ type: "mapsSetCapturing", capturing: false });
-      await chrome.tabs.sendMessage(tab.id, { type: "mapsStop" });
-      await refreshMapsStatus();
+      mapsStopBtn.disabled = true;
+      try {
+        await chrome.runtime.sendMessage({ type: "mapsSetCapturing", capturing: false });
+        await chrome.tabs.sendMessage(tab.id, { type: "mapsStop" });
+        showMapsToast("Capture stopped.", "info", 2500);
+      } catch {
+        showMapsToast("Stop failed (try refreshing Google Maps tab).", "error", 3500);
+      } finally {
+        await refreshMapsStatus();
+      }
     });
 
     mapsFetchDetailsBtn.addEventListener("click", async () => {
       if (!tab.id) return;
       const ms = Number(mapsSpeed?.value || 2500);
-      await chrome.tabs.sendMessage(tab.id, { type: "mapsFetchDetails", throttleMs: ms });
-      await refreshMapsStatus();
+      mapsFetchDetailsBtn.disabled = true;
+      const prevText = mapsFetchDetailsBtn.textContent;
+      mapsFetchDetailsBtn.textContent = "Starting…";
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: "mapsFetchDetails", throttleMs: ms });
+        showMapsToast("Details capture started. Leave the Maps tab open.", "success", 3500);
+      } catch {
+        showMapsToast("Could not start details capture. Refresh Google Maps and retry.", "error", 4500);
+      } finally {
+        mapsFetchDetailsBtn.disabled = false;
+        mapsFetchDetailsBtn.textContent = prevText;
+        await refreshMapsStatus();
+      }
     });
 
     mapsFetchDetailsStopBtn.addEventListener("click", async () => {
       if (!tab.id) return;
-      await chrome.tabs.sendMessage(tab.id, { type: "mapsFetchDetailsStop" });
-      await refreshMapsStatus();
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: "mapsFetchDetailsStop" });
+        showMapsToast("Details capture stopped.", "info", 2500);
+      } catch {
+        showMapsToast("Stop details failed (try refreshing Maps tab).", "error", 3500);
+      } finally {
+        await refreshMapsStatus();
+      }
     });
 
     mapsCopyJsonBtn.addEventListener("click", async () => {
@@ -235,19 +300,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const apiUrl = apiUrlInput.value.trim();
     const frontendUrl = frontendUrlInput.value.trim();
     const showInlineButton = showInlineButtonCheckbox ? showInlineButtonCheckbox.checked : true;
-    
+
     if (!apiUrl) {
       alert('Please enter an API URL');
       return;
     }
 
-    await chrome.storage.sync.set({ 
+    await chrome.storage.sync.set({
       apiUrl,
       frontendUrl: frontendUrl || undefined, // Only save if provided
       showInlineButton
     });
     alert('Settings saved!');
-    
+
     // Reload the current tab to apply changes
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab.id) {

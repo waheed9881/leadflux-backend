@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
   <style>
@@ -11,20 +12,24 @@
       background: #0f172a;
       color: #e2e8f0;
     }
+
     .header {
       text-align: center;
       margin-bottom: 16px;
     }
+
     .logo {
       font-size: 20px;
       font-weight: 600;
       color: #06b6d4;
       margin-bottom: 4px;
     }
+
     .subtitle {
       font-size: 12px;
       color: #94a3b8;
     }
+
     .status {
       padding: 8px;
       background: #1e293b;
@@ -32,12 +37,15 @@
       margin-bottom: 12px;
       font-size: 12px;
     }
+
     .status.active {
       border-left: 3px solid #10b981;
     }
+
     .status.inactive {
       border-left: 3px solid #ef4444;
     }
+
     .button {
       width: 100%;
       padding: 10px;
@@ -49,9 +57,11 @@
       font-weight: 500;
       margin-top: 8px;
     }
+
     .button:hover {
       background: #0891b2;
     }
+
     .input {
       width: 100%;
       padding: 8px;
@@ -62,71 +72,106 @@
       margin-top: 8px;
       font-size: 12px;
     }
+
     .label {
       font-size: 12px;
       color: #94a3b8;
       margin-top: 12px;
       display: block;
     }
+
     .divider {
       height: 1px;
       background: #1f2937;
       margin: 14px 0;
     }
+
     .row {
       display: flex;
       gap: 8px;
     }
+
     .button.secondary {
       background: #334155;
     }
+
     .button.secondary:hover {
       background: #475569;
     }
+
     .button.danger {
       background: #ef4444;
     }
+
     .button.danger:hover {
       background: #dc2626;
     }
+
     .hint {
       font-size: 10px;
       color: #64748b;
       margin-top: 6px;
       line-height: 1.3;
     }
+
+    .toast {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.3;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+    }
+
+    .toast.success {
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.12);
+    }
+
+    .toast.error {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.12);
+    }
+
+    .toast.info {
+      border-color: rgba(6, 182, 212, 0.45);
+      background: rgba(6, 182, 212, 0.12);
+    }
   </style>
 </head>
+
 <body>
   <div class="header">
-    <div class="logo">🔍 LeadFlux</div>
-    <div class="subtitle">Email Finder</div>
+    <div class="logo">🔍 LinkedIn Scrape Data</div>
+    <div id="subtitle" class="subtitle">LinkedIn</div>
   </div>
-  
+
   <div id="status" class="status inactive">
     Not connected
   </div>
-  
+
   <label class="label">API URL (Backend):</label>
   <input type="text" id="apiUrl" class="input" placeholder="http://localhost:8002" value="http://localhost:8002">
-  
+
   <label class="label">Frontend URL (Optional):</label>
   <input type="text" id="frontendUrl" class="input" placeholder="http://localhost:3000" value="">
   <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
     Leave empty to auto-detect from API URL
   </div>
-  
+
   <label class="label" style="margin-top: 12px;">
     <input type="checkbox" id="showInlineButton" style="margin-right: 6px;">
-    Show "Find email with LeadFlux" button on profile pages
+    Show "Find email with LinkedIn Scrape Data" button on LinkedIn profile pages
   </label>
-  
+
   <button id="saveBtn" class="button">Save Settings</button>
 
   <div class="divider"></div>
 
   <div id="mapsSection" style="display:none;">
-    <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Google Maps Capture</div>
+    <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Map Capture</div>
     <div class="hint">
       Open Google Maps, run a search, then scroll the results list. Click “Start”, scroll to load more, then export.
     </div>
@@ -142,12 +187,16 @@
       <button id="mapsStopBtn" class="button secondary" style="margin-top:0;">Stop</button>
     </div>
 
-    <button id="mapsFetchDetailsBtn" class="button secondary" style="margin-top: 8px;">Fetch Details (address/phone/website)</button>
+    <div id="mapsToast" class="toast info" style="display:none;"></div>
+
+    <button id="mapsFetchDetailsBtn" class="button secondary" style="margin-top: 8px;">Fetch Details
+      (address/phone/website)</button>
     <div class="row" style="align-items:center; margin-top: 8px;">
       <label class="label" style="margin-top:0; flex:1;">Speed</label>
       <span id="mapsSpeedLabel" class="hint" style="margin-top:0;">2.5s</span>
     </div>
-    <input id="mapsSpeed" type="range" min="1000" max="8000" step="500" value="2500" style="width:100%; margin-top: 6px;">
+    <input id="mapsSpeed" type="range" min="1000" max="8000" step="500" value="2500"
+      style="width:100%; margin-top: 6px;">
     <div class="row" style="margin-top: 8px;">
       <button id="mapsFetchDetailsStopBtn" class="button secondary" style="margin-top:0;">Stop Details</button>
       <button id="mapsCopyJsonBtn" class="button secondary" style="margin-top:0;">Copy JSON</button>
@@ -169,12 +218,13 @@
 
     <button id="mapsImportBtn" class="button" style="margin-top: 8px;">Import to Backend</button>
     <div id="mapsImportStatus" class="hint"></div>
-    <button id="mapsEnrichImportedBtn" class="button secondary" style="margin-top: 8px;">Enrich Imported Leads (backend)</button>
+    <button id="mapsEnrichImportedBtn" class="button secondary" style="margin-top: 8px;">Enrich Imported Leads
+      (backend)</button>
 
     <button id="mapsClearBtn" class="button danger">Clear</button>
   </div>
-  
+
   <script src="popup.js"></script>
 </body>
-</html>
 
+</html>
