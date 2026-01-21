@@ -1,13 +1,12 @@
 """Job-based API routes with database persistence"""
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
-from app.api.routes_auth import get_current_user
-from app.api.routes_workspaces import get_current_workspace
+from app.api.routes_workspaces import get_current_user_optional, get_current_workspace
 from app.api.schemas import ScrapeRequest, LeadOut
 from app.core.db import get_db
 from app.core.orm import ActivityLogORM, JobStatus, LeadORM, ScrapeJobORM, UserORM
@@ -115,7 +114,7 @@ def _get_job_for_workspace(
 def get_job_logs(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Fetch recent activity logs for a job."""
@@ -147,13 +146,19 @@ def get_job_logs(
 
 @router.get("/jobs", response_model=List[dict])
 def get_jobs(
+    response: Response,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    include_ai: bool = Query(False),
 ) -> List[dict]:
     """Get all jobs for the current workspace"""
     org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
-    jobs = (
+
+    query = (
         db.query(ScrapeJobORM)
         .filter(
             ScrapeJobORM.organization_id == org_id,
@@ -162,9 +167,53 @@ def get_jobs(
                 ScrapeJobORM.workspace_id.is_(None),
             ),
         )
-        .order_by(ScrapeJobORM.created_at.desc())
-        .all()
     )
+
+    if status_filter and status_filter.lower() != "all":
+        try:
+            status_value = JobStatus(status_filter)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status '{status_filter}'")
+        query = query.filter(ScrapeJobORM.status == status_value)
+
+    columns = [
+        ScrapeJobORM.id,
+        ScrapeJobORM.niche,
+        ScrapeJobORM.location,
+        ScrapeJobORM.status,
+        ScrapeJobORM.result_count,
+        ScrapeJobORM.created_at,
+        ScrapeJobORM.updated_at,
+        ScrapeJobORM.started_at,
+        ScrapeJobORM.completed_at,
+        ScrapeJobORM.duration_seconds,
+        ScrapeJobORM.sites_crawled,
+        ScrapeJobORM.sites_failed,
+        ScrapeJobORM.total_pages_crawled,
+        ScrapeJobORM.sources_used,
+        ScrapeJobORM.error_message,
+        ScrapeJobORM.max_results,
+        ScrapeJobORM.max_pages_per_site,
+        ScrapeJobORM.total_targets,
+        ScrapeJobORM.processed_targets,
+        ScrapeJobORM.extract_config,
+        ScrapeJobORM.ai_status,
+        ScrapeJobORM.ai_error,
+    ]
+    if include_ai:
+        columns.extend([ScrapeJobORM.ai_summary, ScrapeJobORM.ai_segments])
+
+    query = (
+        query.options(load_only(*columns))
+        .order_by(ScrapeJobORM.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    # Jobs list is polled frequently; allow short client-side caching.
+    response.headers["Cache-Control"] = "private, max-age=2"
+
+    jobs = query.all()
     
     return [
         {
@@ -189,8 +238,8 @@ def get_jobs(
             "processed_targets": job.processed_targets or 0,
             "extract_config": job.extract_config or {},
             "ai_status": job.ai_status or "idle",
-            "ai_summary": job.ai_summary,
-            "ai_segments": job.ai_segments or [],
+            "ai_summary": job.ai_summary if include_ai else None,
+            "ai_segments": (job.ai_segments or []) if include_ai else [],
             "ai_error": job.ai_error,
         }
         for job in jobs
@@ -203,7 +252,7 @@ async def trigger_job_ai_insights(
     job_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Trigger AI insights generation for a completed job"""
@@ -239,7 +288,7 @@ async def trigger_job_ai_insights(
 def get_job(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Get a single job by ID"""
@@ -279,7 +328,7 @@ async def create_ai_segment_saved_view(
     job_id: int,
     segment_index: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a Saved View from an AI segment"""
@@ -327,7 +376,7 @@ async def create_ai_segment_playbook(
     job_id: int,
     segment_index: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a Playbook Blueprint from an AI segment"""
@@ -373,7 +422,7 @@ async def create_ai_segment_playbook(
 def get_job_leads(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> List[LeadOut]:
     """Get leads for a specific job"""
@@ -413,7 +462,7 @@ def get_job_leads(
 async def run_scrape_job(
     payload: ScrapeRequest,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a scrape job and run it in the background - returns immediately"""
@@ -530,7 +579,7 @@ async def run_scrape_job(
 async def retry_job(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Retry a scrape job with the same parameters."""

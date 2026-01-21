@@ -7,8 +7,7 @@ from sqlalchemy import String, or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.api.routes_auth import get_current_user
-from app.api.routes_workspaces import get_current_workspace
+from app.api.routes_workspaces import get_current_user_optional, get_current_workspace
 from app.api.schemas import LeadOut
 from app.core.db import get_db
 from app.core.orm import LeadORM, UserORM
@@ -91,7 +90,7 @@ def get_leads(
     limit: int = Query(100, le=500, description="Maximum number of leads"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> List[LeadOut]:
     """Get leads with optional filters and global search"""
@@ -179,7 +178,7 @@ def export_leads_csv(
     min_score: Optional[float] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Export leads to CSV"""
@@ -245,7 +244,7 @@ def export_leads_excel(
     min_score: Optional[float] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Export leads to Excel"""
@@ -313,7 +312,7 @@ def export_leads_excel(
 def get_lead(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> LeadOut:
     """Get a single lead by ID"""
@@ -360,7 +359,7 @@ def get_lead(
 def get_lead_score_explain(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Get explainable score breakdown for a lead."""
@@ -385,7 +384,7 @@ def get_lead_score_history(
     lead_id: int,
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Get lead score change history."""
@@ -431,7 +430,7 @@ def get_lead_score_history(
 def bulk_update_tags(
     body: BulkTagRequest,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
     workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Add or remove a tag across multiple leads."""

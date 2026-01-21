@@ -8,7 +8,7 @@ from fastapi.responses import Response, FileResponse
 
 router = APIRouter()
 
-EXTENSION_DIR = Path("chrome-extension")
+EXTENSION_DIR = Path(__file__).resolve().parents[2] / "chrome-extension"
 
 
 @router.get("/extension/download")
@@ -49,7 +49,7 @@ def download_extension():
         content=zip_buffer.getvalue(),
         media_type="application/zip",
         headers={
-            "Content-Disposition": "attachment; filename=leadflux-email-finder-extension.zip"
+            "Content-Disposition": "attachment; filename=leadflux-chrome-extension.zip"
         }
     )
 

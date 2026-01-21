@@ -1,5 +1,5 @@
 """Database configuration and session management (SYNC version)"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 import os
 from app.core.config import settings
@@ -24,6 +24,20 @@ engine = create_engine(
     connect_args=connect_args,
     pool_pre_ping=True,
 )
+
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-redef]
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            cursor.execute("PRAGMA temp_store=MEMORY;")
+            cursor.execute("PRAGMA cache_size=-64000;")  # ~64MB
+            cursor.close()
+        except Exception:
+            # Best-effort tuning (non-fatal).
+            pass
 
 SessionLocal = sessionmaker(
     autocommit=False,

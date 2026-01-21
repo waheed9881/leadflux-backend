@@ -8,7 +8,9 @@ services:
     startCommand: uvicorn app.api.server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: leadflux-db
+          property: connectionString
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: PYTHON_VERSION

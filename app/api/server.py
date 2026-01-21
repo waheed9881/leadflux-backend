@@ -1,6 +1,7 @@
 """FastAPI application"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
@@ -109,6 +110,28 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up application...")
     try:
         # Any startup tasks can go here
+        try:
+            from sqlalchemy import text
+            from app.core.db import DATABASE_URL, engine
+
+            # SQLite performance: ensure helpful indexes exist for hot list endpoints.
+            if DATABASE_URL.startswith("sqlite"):
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_scrape_jobs_org_ws_created "
+                            "ON scrape_jobs (organization_id, workspace_id, created_at DESC)"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_scrape_jobs_org_status_created "
+                            "ON scrape_jobs (organization_id, status, created_at DESC)"
+                        )
+                    )
+                logger.info("Ensured SQLite indexes for jobs listing.")
+        except Exception as e:
+            logger.warning(f"Startup index check failed (non-fatal): {e}")
         logger.info("Application startup complete.")
     except Exception as e:
         logger.error(f"Error during startup: {e}")
@@ -148,6 +171,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Reduce payload size for list endpoints (jobs/leads/etc).
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # Global exception handler
     @app.exception_handler(Exception)

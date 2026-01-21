@@ -1,7 +1,7 @@
 """Workspaces API routes"""
 import logging
 import secrets
-from typing import List, Optional
+from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
@@ -11,7 +11,8 @@ from app.core.db import get_db
 from app.core.orm_workspaces import WorkspaceORM, WorkspaceMemberORM, WorkspaceRole
 from app.core.orm import UserORM, OrganizationORM
 from app.api.routes_settings import get_or_create_default_org
-from app.api.routes_auth import get_current_user, oauth2_scheme
+from app.api.routes_auth import get_current_user
+from app.api.dev_defaults import get_or_create_default_user_and_workspace
 from app.services.workspace_permissions import (
     require_workspace_member,
     require_role,
@@ -22,54 +23,21 @@ from app.services.workspace_permissions import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_DEFAULT_CONTEXT_IDS: Optional[Dict[str, int]] = None
 
-def get_or_create_default_user_and_workspace(db: Session) -> tuple[UserORM, WorkspaceORM]:
-    """Get or create default user and workspace for development/testing"""
-    org = get_or_create_default_org(db)
-    
-    # Get or create default user
-    user = db.query(UserORM).filter(UserORM.organization_id == org.id).first()
-    if not user:
-        from app.core.orm import UserStatus
-        user = UserORM(
-            email="default@example.com",
-            password_hash="",  # Empty for default user
-            full_name="Default User",
-            organization_id=org.id,
-            status=UserStatus.active,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    
-    # Get or create default workspace
-    workspace = db.query(WorkspaceORM).filter(WorkspaceORM.organization_id == org.id).first()
-    if not workspace:
-        workspace = WorkspaceORM(
-            name="Default Workspace",
-            slug="default",
-            organization_id=org.id,
-        )
-        db.add(workspace)
-        db.commit()
-        db.refresh(workspace)
-    
-    # Ensure user is a member (create membership if it doesn't exist)
-    membership = db.query(WorkspaceMemberORM).filter(
-        WorkspaceMemberORM.workspace_id == workspace.id,
-        WorkspaceMemberORM.user_id == user.id,
-    ).first()
-    
-    if not membership:
-        member = WorkspaceMemberORM(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            role=WorkspaceRole.owner,
-            accepted_at=datetime.utcnow(),
-        )
-        db.add(member)
-        db.commit()
-    
+
+def _get_default_user_and_workspace(db: Session) -> tuple[UserORM, WorkspaceORM]:
+    """Return cached default user/workspace for no-auth mode (minimize DB round-trips)."""
+    global _DEFAULT_CONTEXT_IDS
+
+    if _DEFAULT_CONTEXT_IDS:
+        user = db.get(UserORM, _DEFAULT_CONTEXT_IDS.get("user_id"))
+        workspace = db.get(WorkspaceORM, _DEFAULT_CONTEXT_IDS.get("workspace_id"))
+        if user and workspace:
+            return user, workspace
+
+    user, workspace = get_or_create_default_user_and_workspace(db)
+    _DEFAULT_CONTEXT_IDS = {"user_id": user.id, "workspace_id": workspace.id}
     return user, workspace
 
 
@@ -89,7 +57,7 @@ def get_current_user_optional(
     """Get current user, or create default if no auth provided"""
     # For now, always use default user to avoid auth issues
     # TODO: Add proper token validation later
-    user, _ = get_or_create_default_user_and_workspace(db)
+    user, _ = _get_default_user_and_workspace(db)
     return user
 
 
@@ -102,7 +70,7 @@ def get_current_workspace_optional(
     """Get current workspace, or create default if no auth provided"""
     # For now, always use default workspace to avoid auth issues
     # TODO: Add proper workspace selection later
-    _, workspace = get_or_create_default_user_and_workspace(db)
+    _, workspace = _get_default_user_and_workspace(db)
     return workspace
 
 
@@ -110,77 +78,18 @@ def get_current_workspace(
     workspace_id: Optional[int] = Query(None, description="Workspace ID (from query or header)"),
     x_workspace_id: Optional[int] = Header(None, alias="X-Workspace-ID", description="Workspace ID from header"),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
+    current_user: UserORM = Depends(get_current_user_optional),
 ) -> WorkspaceORM:
     """Get current workspace for the authenticated user"""
-    # Get workspace_id from header or query parameter
-    ws_id = x_workspace_id or workspace_id
-    
-    # If no workspace_id provided, try to get user's default workspace
-    if ws_id is None:
-        # Prefer user's current_workspace_id when present (frontend typically relies on this).
-        if current_user.current_workspace_id is not None:
-            ws_id = current_user.current_workspace_id
-        else:
-            # Fallback to any accepted workspace membership.
-            membership = (
-                db.query(WorkspaceMemberORM)
-                .filter(
-                    WorkspaceMemberORM.user_id == current_user.id,
-                    WorkspaceMemberORM.accepted_at.isnot(None),
-                )
-                .first()
-            )
-
-            if membership:
-                ws_id = membership.workspace_id
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No workspace specified and user has no workspaces",
-                )
-    
-    # Verify workspace exists
-    workspace = db.query(WorkspaceORM).filter(WorkspaceORM.id == ws_id).first()
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
-        )
-    
-    # Verify user is a member
-    membership = db.query(WorkspaceMemberORM).filter(
-        WorkspaceMemberORM.workspace_id == ws_id,
-        WorkspaceMemberORM.user_id == current_user.id,
-        WorkspaceMemberORM.accepted_at.isnot(None)
-    ).first()
-    
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this workspace"
-        )
-    
+    # No-auth mode: always return the default workspace.
+    _, workspace = _get_default_user_and_workspace(db)
     return workspace
 
 
 # Helper to get current user (placeholder - integrate with your auth system)
 def get_current_user_id(db: Session = Depends(get_db)) -> int:
     """Get current user ID from session/JWT"""
-    # TODO: Replace with actual auth system
-    # For now, get first user or create default
-    org = get_or_create_default_org(db)
-    user = db.query(UserORM).filter(UserORM.organization_id == org.id).first()
-    if not user:
-        # Create default user
-        user = UserORM(
-            email="default@example.com",
-            full_name="Default User",
-            organization_id=org.id,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    user, _ = _get_default_user_and_workspace(db)
     return user.id
 
 

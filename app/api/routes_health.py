@@ -330,7 +330,7 @@ def get_all_workspaces_health(
 
 
 @router.get("/llm", response_model=LLMHealthResponse)
-def get_llm_health(current_user: UserORM = Depends(get_current_user)) -> LLMHealthResponse:
+def get_llm_health(current_user: UserORM = Depends(get_current_user_optional)) -> LLMHealthResponse:
     """Surface-level diagnostics for LLM configuration."""
     key_state = {
         "groq": bool(settings.GROQ_API_KEY),

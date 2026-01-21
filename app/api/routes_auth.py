@@ -12,11 +12,12 @@ from app.core.orm import UserORM, UserStatus, OrganizationORM
 from app.core.orm_workspaces import WorkspaceMemberORM
 from app.services.auth_service import AuthService
 from app.services.jwt_service import create_user_token, decode_access_token
+from app.api.dev_defaults import get_or_create_default_user_and_workspace
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 # ============================================================================
@@ -69,33 +70,29 @@ class MeResponse(BaseModel):
 # ============================================================================
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> UserORM:
     """Get current authenticated user from JWT token"""
+    # No-auth mode: allow requests without a token by using a default user/workspace.
+    if not token:
+        user, _ = get_or_create_default_user_and_workspace(db)
+        return user
+
     payload = decode_access_token(token)
     if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        user, _ = get_or_create_default_user_and_workspace(db)
+        return user
     
     user_id: Optional[str] = payload.get("sub")
     if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        user, _ = get_or_create_default_user_and_workspace(db)
+        return user
     
     user = db.query(UserORM).filter(UserORM.id == int(user_id)).first()
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        user, _ = get_or_create_default_user_and_workspace(db)
+        return user
     
     return user
 
