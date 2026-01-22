@@ -59,7 +59,6 @@ from app.api.routes_dashboard_ai import router as dashboard_ai_router
 from app.api.routes_email import router as email_router
 from app.api.routes_email_tools import router as email_tools_router
 from app.api.routes_extension import router as extension_router
-from app.api.routes_linkedin import router as linkedin_router
 from app.api.routes_lists import router as lists_router
 from app.api.routes_usage import router as usage_router
 from app.api.routes_leads_email_status import router as leads_email_status_router
@@ -95,7 +94,24 @@ from app.api.routes_lookalike import router as lookalike_router
 from app.api.routes_saved_views import router as saved_views_router
 from app.api.routes_duplicates import router as duplicates_router
 from app.api.routes_health_score import router as health_score_router
-from app.api.routes_google_maps import router as google_maps_router
+
+# LinkedIn/Google Maps browser automation routes are optional on serverless runtimes
+# (Vercel free tier, etc.) where Playwright/Selenium are not supported by default.
+try:
+    from app.api.routes_linkedin import router as linkedin_router
+    LINKEDIN_ROUTES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"LinkedIn routes not available: {e}")
+    linkedin_router = None
+    LINKEDIN_ROUTES_AVAILABLE = False
+
+try:
+    from app.api.routes_google_maps import router as google_maps_router
+    GOOGLE_MAPS_ROUTES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Google Maps routes not available: {e}")
+    google_maps_router = None
+    GOOGLE_MAPS_ROUTES_AVAILABLE = False
 from app.api.routes_onboarding import router as onboarding_router
 from app.api.routes_enrichment import router as enrichment_router
 
@@ -208,7 +224,10 @@ def create_app() -> FastAPI:
     app.include_router(email_router, prefix="/api", tags=["email"])
     app.include_router(email_tools_router, prefix="/api", tags=["email-tools"])
     app.include_router(extension_router, prefix="/api", tags=["extension"])
-    app.include_router(linkedin_router, prefix="/api", tags=["linkedin"])
+    if LINKEDIN_ROUTES_AVAILABLE and linkedin_router:
+        app.include_router(linkedin_router, prefix="/api", tags=["linkedin"])
+    else:
+        logger.warning("LinkedIn routes not registered - Playwright may not be installed")
     app.include_router(lists_router, prefix="/api", tags=["lists"])
     app.include_router(usage_router, prefix="/api", tags=["usage"])
     app.include_router(leads_email_status_router, prefix="/api", tags=["leads"])
@@ -244,7 +263,10 @@ def create_app() -> FastAPI:
     app.include_router(enrichment_router, prefix="/api", tags=["enrichment"])
     app.include_router(duplicates_router, prefix="/api", tags=["duplicates"])
     app.include_router(health_score_router, prefix="/api", tags=["health-score"])
-    app.include_router(google_maps_router, prefix="/api", tags=["google-maps"])
+    if GOOGLE_MAPS_ROUTES_AVAILABLE and google_maps_router:
+        app.include_router(google_maps_router, prefix="/api", tags=["google-maps"])
+    else:
+        logger.warning("Google Maps routes not registered - Selenium may not be installed")
 
     # Serve static files (uploads)
     import os
