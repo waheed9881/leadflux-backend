@@ -1,21 +1,13 @@
 """
-Vercel serverless function entry point for FastAPI
-This file is required by Vercel to run Python serverless functions
+Vercel serverless function entry point for FastAPI.
+
+Vercel's Python runtime supports ASGI apps directly, so we export `app`.
 """
-from app.api.server import app
 
-# Try Vercel's native ASGI support first
-# Vercel Python runtime supports ASGI apps directly in newer versions
-# If this doesn't work, we'll need to ensure mangum is installed
-try:
-    from mangum import Mangum
-    # Use Mangum if available (for better compatibility)
-    handler = Mangum(app, lifespan="off")
-except ImportError:
-    # Fallback to direct app export (may work with newer Vercel runtime)
-    # Note: This might not work on all Vercel plans
-    handler = app
+from app.api.server import app as app
 
-# Also export app directly for compatibility
+# Some tooling expects a `handler` symbol; on Vercel it can be the ASGI app.
+handler = app
+
 __all__ = ["app", "handler"]
 
