@@ -2,7 +2,7 @@
 import logging
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
-import numpy as np
+import math
 
 from app.core.orm import LeadORM, LeadSnapshotORM
 from app.core.orm_v2 import EntityORM, EntityEmbeddingORM, EntityType
@@ -17,6 +17,14 @@ class ContrastiveEmbeddingService:
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.model_name = model_name
         self.dimension = 384  # all-MiniLM-L6-v2 dimension
+
+    @staticmethod
+    def _dot(a: List[float], b: List[float]) -> float:
+        return sum(x * y for x, y in zip(a, b))
+
+    @staticmethod
+    def _l2_norm(vec: List[float]) -> float:
+        return math.sqrt(sum(x * x for x in vec))
     
     def generate_embedding(self, text: str) -> Optional[List[float]]:
         """Generate embedding for text using sentence transformer"""
@@ -32,7 +40,7 @@ class ContrastiveEmbeddingService:
                 embedding.append(0.0)
             embedding = embedding[:self.dimension]
             # Normalize
-            norm = np.linalg.norm(embedding)
+            norm = self._l2_norm(embedding)
             if norm > 0:
                 embedding = [e / norm for e in embedding]
             return embedding
@@ -176,15 +184,19 @@ class ContrastiveEmbeddingService:
         ).all()
         
         similarities = []
-        ref_vec = np.array(ref_embedding)
+        ref_norm = self._l2_norm(ref_embedding)
+        if ref_norm == 0:
+            return []
         
         for emb_orm, candidate_lead in other_embeddings:
             cand_embedding = emb_orm.vector if isinstance(emb_orm.vector, list) else []
             if not cand_embedding or len(cand_embedding) != len(ref_embedding):
                 continue
             
-            cand_vec = np.array(cand_embedding)
-            similarity = float(np.dot(ref_vec, cand_vec) / (np.linalg.norm(ref_vec) * np.linalg.norm(cand_vec)))
+            cand_norm = self._l2_norm(cand_embedding)
+            if cand_norm == 0:
+                continue
+            similarity = float(self._dot(ref_embedding, cand_embedding) / (ref_norm * cand_norm))
             
             if similarity >= min_similarity:
                 similarities.append((candidate_lead, similarity))

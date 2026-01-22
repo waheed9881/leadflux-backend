@@ -90,7 +90,6 @@ from app.api.routes_notifications import router as notifications_router
 from app.api.routes_deals import router as deals_router
 from app.api.routes_health import router as health_router
 from app.api.routes_templates import router as templates_router
-from app.api.routes_lookalike import router as lookalike_router
 from app.api.routes_saved_views import router as saved_views_router
 from app.api.routes_duplicates import router as duplicates_router
 from app.api.routes_health_score import router as health_score_router
@@ -112,6 +111,16 @@ except ImportError as e:
     logger.warning(f"Google Maps routes not available: {e}")
     google_maps_router = None
     GOOGLE_MAPS_ROUTES_AVAILABLE = False
+
+# Lookalike endpoints require heavier ML deps (e.g., numpy). Keep optional for
+# lightweight/serverless deployments.
+try:
+    from app.api.routes_lookalike import router as lookalike_router
+    LOOKALIKE_ROUTES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Lookalike routes not available: {e}")
+    lookalike_router = None
+    LOOKALIKE_ROUTES_AVAILABLE = False
 from app.api.routes_onboarding import router as onboarding_router
 from app.api.routes_enrichment import router as enrichment_router
 
@@ -257,7 +266,10 @@ def create_app() -> FastAPI:
     app.include_router(deals_router, prefix="/api", tags=["deals"])
     app.include_router(health_router, prefix="/api", tags=["health"])
     app.include_router(templates_router, prefix="/api", tags=["templates"])
-    app.include_router(lookalike_router, prefix="/api", tags=["lookalike"])
+    if LOOKALIKE_ROUTES_AVAILABLE and lookalike_router:
+        app.include_router(lookalike_router, prefix="/api", tags=["lookalike"])
+    else:
+        logger.warning("Lookalike routes not registered - numpy may not be installed")
     app.include_router(saved_views_router, prefix="/api", tags=["saved-views"])
     app.include_router(onboarding_router, prefix="/api", tags=["onboarding"])
     app.include_router(enrichment_router, prefix="/api", tags=["enrichment"])
