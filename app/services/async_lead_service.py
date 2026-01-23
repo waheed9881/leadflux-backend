@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import Iterable, List
 from app.core.models import Lead
+from app.core.config import settings
 from app.scraper.async_crawler import AsyncCrawler
 from app.scraper.extractor import extract_from_soup
 from app.scraper.normalizer import normalize_emails, normalize_phones
@@ -56,18 +57,29 @@ class AsyncLeadService:
         
         if self.progress_callback:
             self.progress_callback(0, total_targets)
-        
-        tasks = [
-            self._enrich_lead(lead, total_targets)
-            for lead in websites_to_process
-        ]
-        
+
+        # Limit parallel website enrichments to avoid throttling/timeouts in production (esp. serverless/shared egress).
+        enrichment_semaphore = asyncio.Semaphore(max(1, settings.WEBSITE_ENRICH_CONCURRENCY))
+
+        async def enrich_with_limit(lead: Lead) -> Lead:
+            async with enrichment_semaphore:
+                return await self._enrich_lead(lead, total_targets)
+
+        tasks = [enrich_with_limit(lead) for lead in websites_to_process]
+
         try:
             enriched_results = await asyncio.gather(*tasks, return_exceptions=True)
             enriched_leads = [r for r in enriched_results if isinstance(r, Lead)]
         except Exception as e:
             logger.warning(f"Some leads failed to enrich: {e}")
             enriched_leads = []
+        finally:
+            # Ensure underlying HTTP resources are released after the job completes.
+            if self.crawler:
+                try:
+                    await self.crawler.aclose()
+                except Exception:
+                    pass
         
         # 3) Merge enriched leads with those that had no website
         no_website_leads = [l for l in raw_leads if not l.website]

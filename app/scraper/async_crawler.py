@@ -18,6 +18,47 @@ class AsyncCrawler:
         self.max_pages = max_pages or settings.DEFAULT_MAX_PAGES
         self.timeout = timeout or settings.DEFAULT_TIMEOUT
         self.concurrency = concurrency or settings.DEFAULT_CONCURRENCY
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
+
+    async def _get_client(self, headers: dict) -> httpx.AsyncClient:
+        async with self._client_lock:
+            if self._client is not None:
+                return self._client
+
+            timeout = httpx.Timeout(self.timeout, connect=min(self.timeout, 5.0))
+            limits = httpx.Limits(max_connections=max(10, self.concurrency * 10), max_keepalive_connections=20)
+
+            # HTTP/2 is optional in httpx (requires `h2`). Prefer it when available, but fall back safely.
+            try:
+                self._client = httpx.AsyncClient(
+                    timeout=timeout,
+                    headers=headers,
+                    follow_redirects=True,
+                    http2=True,
+                    limits=limits,
+                )
+            except Exception:
+                self._client = httpx.AsyncClient(
+                    timeout=timeout,
+                    headers=headers,
+                    follow_redirects=True,
+                    limits=limits,
+                )
+            return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client (safe to call multiple times)."""
+        async with self._client_lock:
+            if self._client is None:
+                return
+            client = self._client
+            self._client = None
+
+        try:
+            await client.aclose()
+        except Exception:
+            pass
     
     async def crawl(self, root_url: str) -> AsyncIterator[Tuple[str, BeautifulSoup]]:
         """Crawl a website starting from root_url"""
@@ -30,10 +71,9 @@ class AsyncCrawler:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         }
-        
-        client = None
+
         try:
-            client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
+            client = await self._get_client(headers=headers)
             while queue and len(visited) < self.max_pages:
                 url = queue.popleft()
                 
@@ -49,10 +89,16 @@ class AsyncCrawler:
                         if resp.status_code == 403:
                             logger.debug(f"Skipping {url}: 403 Forbidden (site blocked scraping)")
                             continue
+                        if resp.status_code == 429:
+                            # Simple backoff for rate limiting
+                            await asyncio.sleep(1.0)
+                            continue
                         resp.raise_for_status()
                     except httpx.HTTPStatusError as e:
                         if e.response.status_code == 403:
                             logger.debug(f"Skipping {url}: 403 Forbidden (site blocked scraping)")
+                        continue
+                    except httpx.TimeoutException:
                         continue
                     except Exception:
                         continue
@@ -82,13 +128,8 @@ class AsyncCrawler:
                         if absolute not in queue and len(visited) + len(queue) < self.max_pages:
                             queue.append(absolute)
         finally:
-            # Ensure client is properly closed, handling any cleanup errors
-            if client is not None:
-                try:
-                    await client.aclose()
-                except (AttributeError, Exception):
-                    # Ignore cleanup errors - client may already be closed or in invalid state
-                    pass
+            # Client is shared/reused; do not close per crawl.
+            pass
     
     def _same_domain(self, root: str, url: str) -> bool:
         """Check if URL is from the same domain as root"""
